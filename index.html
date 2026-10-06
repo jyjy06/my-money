@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#2f5d50">
+<meta name="theme-color" content="#f6c22e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="小账本">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
 <title>校园小账本</title>
 <style>
@@ -33,6 +33,8 @@ button{font:inherit;color:inherit;cursor:pointer}
 button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand img{width:36px;height:36px;border-radius:50%}
 h1{font-size:18px;font-weight:700;margin:0;letter-spacing:.02em}
 .month{display:flex;align-items:center;gap:4px}
 .month button{background:none;border:0;width:32px;height:32px;border-radius:8px;color:var(--muted);font-size:18px}
@@ -107,7 +109,7 @@ section h2{font-size:13px;font-weight:500;color:var(--muted);margin:0 0 10px;let
 
 <div class="wrap">
   <header>
-    <h1>校园小账本</h1>
+    <h1 class="brand"><img src="logo-96.png" alt="" width="36" height="36">校园小账本</h1>
     <div class="month">
       <button id="prev" aria-label="上个月">‹</button>
       <span id="mlabel" class="num"></span>
