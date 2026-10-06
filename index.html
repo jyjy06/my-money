@@ -273,7 +273,7 @@ function render(){
     const dOut=items.filter(e=>e.type==="out").reduce((s,e)=>s+e.amount,0);
     const box=document.createElement("div"); box.className="day";
     const wk="日一二三四五六"[new Date(d+"T00:00").getDay()];
-    box.innerHTML=`<div class="dayhead"><span class="num">${d.slice(5).replace("-","/")} 周${wk}</span><span class="num">${dOut?"支出 "+money(dOut):""}</span></div>`;
+    box.innerHTML=`<div class="dayhead"><span class="num">${d.slice(8)}/${d.slice(5,7)} 周${wk}</span><span class="num">${dOut?"支出 "+money(dOut):""}</span></div>`;
     items.forEach(e=>{
       const it=document.createElement("div"); it.className="item";
       it.innerHTML=`<span class="tag"></span><span class="note"></span><span class="right"><span class="num ${e.type}"></span><button class="del" type="button">删除</button></span>`;
