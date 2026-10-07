@@ -1,5 +1,5 @@
 // 改了 index.html 之后，把版本号 +1，手机下次联网时会自动更新（记录不受影响）
-const CACHE = "ledger-v4";
+const CACHE = "ledger-v5";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable.png", "apple-touch-icon.png", "logo-96.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener("activate", e => {
