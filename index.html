@@ -97,6 +97,11 @@ section h2{font-size:13px;font-weight:500;color:var(--muted);margin:0 0 10px;let
 .item .right{display:flex;align-items:center;gap:8px}
 .del{border:0;background:none;color:var(--muted);font-size:12px;padding:2px 4px;border-radius:5px}
 .del:hover{color:var(--out)}
+.edit{border:0;background:none;color:var(--muted);font-size:12px;padding:2px 4px;border-radius:5px}
+.edit:hover{color:var(--accent)}
+.item.editing .tag{background:var(--accent);color:var(--bg)}
+.editbar{font-size:13px;color:var(--accent);background:var(--accent-soft);border-radius:8px;padding:6px 10px}
+#cancelEdit{align-self:center}
 .del.confirm{color:var(--bg);background:var(--out)}
 .empty{color:var(--muted);font-size:14px;padding:20px 0;text-align:center;border:1px dashed var(--line);border-radius:12px}
 .backup{display:flex;flex-direction:column;gap:8px;align-items:center;font-size:13px}
@@ -153,7 +158,9 @@ section h2{font-size:13px;font-weight:500;color:var(--muted);margin:0 0 10px;let
       <input id="note" placeholder="备注（可选）" maxlength="40">
       <input id="date" type="date" aria-label="日期">
     </div>
+    <div class="editbar" id="editBar" hidden>正在修改一笔已记录的明细</div>
     <button class="save" id="saveBtn" type="submit" disabled>记一笔</button>
+    <button type="button" class="link muted" id="cancelEdit" hidden>取消修改</button>
     <div class="msg" id="msg"></div>
   </form>
 
@@ -203,6 +210,7 @@ function applyBudget(){
 }
 function loadBudgetState(){ const b=store.loadBudgets(); budgetMap=b.map; legacyBudget=b.legacy; applyBudget(); }
 let store = null;
+let editingId = null;
 
 /* ---------- storage: this phone only ---------- */
 function localStore(){
@@ -216,6 +224,7 @@ function localStore(){
     watchMonth(a,b,cb){ listener=cb; range=[a,b]; emit(); return ()=>{listener=null}; },
     loadBudgets(){ const d=load(); return {map:d.budgets||{},legacy:{total:d.budget||0,cats:d.catBudgets||{}}}; },
     async add(e){ const d=load(); d.entries.push({...e,id:Date.now().toString(36)+Math.random().toString(36).slice(2,6)}); save(d); emit(); },
+    async update(id,fields){ const d=load(); const i=d.entries.findIndex(x=>x.id===id); if(i<0){ const err=new Error("not found"); err.code="not_found"; throw err; } d.entries[i]={...d.entries[i],...fields,id}; save(d); emit(); },
     async remove(id){ const d=load(); d.entries=d.entries.filter(x=>x.id!==id); save(d); emit(); },
     async setBudget(key,total,cats){ const d=load(); d.budgets=d.budgets||{}; d.budgets[key]={total,cats}; save(d); },
     dump(){ return load(); },
@@ -294,16 +303,18 @@ function render(){
     box.innerHTML=`<div class="dayhead"><span class="num">${d.slice(8)}/${d.slice(5,7)} 周${wk}</span><span class="num">${dOut?"支出 "+money(dOut):""}</span></div>`;
     items.forEach(e=>{
       const it=document.createElement("div"); it.className="item";
-      it.innerHTML=`<span class="tag"></span><span class="note"></span><span class="right"><span class="num ${e.type}"></span><button class="del" type="button">删除</button></span>`;
+      it.innerHTML=`<span class="tag"></span><span class="note"></span><span class="right"><span class="num ${e.type}"></span><button class="edit" type="button">编辑</button><button class="del" type="button">删除</button></span>`;
       it.querySelector(".tag").textContent=e.cat;
       it.querySelector(".note").textContent=e.note||"";
       if(!e.note){ it.querySelector(".note").innerHTML="<small>—</small>"; }
       it.querySelector(".num").textContent=(e.type==="out"?"−":"+")+money(e.amount).slice(3);
+      if(e.id===editingId) it.classList.add("editing");
+      it.querySelector(".edit").onclick=()=>startEdit(e);
       const del=it.querySelector(".del");
       del.onclick=async()=>{
         if(!del.classList.contains("confirm")){ del.classList.add("confirm"); del.textContent="确认删除"; setTimeout(()=>{del.classList.remove("confirm");del.textContent="删除"},3000); return; }
         del.disabled=true;
-        try{ await store.remove(e.id); }catch(err){ showMsg("删除失败，请再试一次。"); del.disabled=false; }
+        try{ await store.remove(e.id); if(editingId===e.id) exitEdit(); }catch(err){ showMsg("删除失败，请再试一次。"); del.disabled=false; }
       };
       box.appendChild(it);
     });
@@ -311,6 +322,29 @@ function render(){
   });
 }
 function showMsg(t){ $("msg").textContent=t; clearTimeout(showMsg.t); showMsg.t=setTimeout(()=>$("msg").textContent="",3000); }
+
+/* ---------- edit ---------- */
+function startEdit(e){
+  editingId=e.id;
+  setType(e.type); cat=e.cat; renderChips();
+  $("amount").value=(e.amount/100).toFixed(2);
+  $("note").value=e.note||"";
+  $("date").value=e.date;
+  $("editBar").hidden=false; $("cancelEdit").hidden=false;
+  $("saveBtn").textContent="保存修改";
+  $("amount").oninput();
+  render();
+  $("form").scrollIntoView({behavior:"smooth",block:"center"});
+  $("amount").focus();
+}
+function exitEdit(){
+  editingId=null;
+  $("editBar").hidden=true; $("cancelEdit").hidden=true;
+  $("saveBtn").textContent="记一笔";
+  $("amount").value=""; $("note").value=""; $("date").value=today();
+  setType("out"); $("amount").oninput(); render();
+}
+$("cancelEdit").onclick=exitEdit;
 
 /* ---------- month subscription ---------- */
 let unsub=null;
@@ -358,6 +392,20 @@ $("form").onsubmit=async ev=>{
   const amount=toCents($("amount").value); if(!amount||!store) return;
   const e={type,amount,cat,note:$("note").value.trim(),date:$("date").value||today(),created:Date.now()};
   $("saveBtn").disabled=true;
+  if(editingId){
+    const id=editingId;
+    try{
+      await store.update(id,{type:e.type,amount:e.amount,cat:e.cat,note:e.note,date:e.date,updated:Date.now()});
+      exitEdit();
+      const [y,m]=e.date.split("-").map(Number);
+      if(y!==ym.y||m!==ym.m){ ym={y,m}; openBudget(false); watch(); }
+      showMsg("已保存修改");
+    }catch(err){
+      if(err&&err.code==="not_found"){ exitEdit(); showMsg("找不到这笔记录，可能已经被删除。"); }
+      else { showMsg("没有保存成功，请再试一次。"); $("saveBtn").disabled=false; }
+    }
+    return;
+  }
   try{
     await store.add(e);
     $("amount").value=""; $("note").value="";
@@ -392,7 +440,7 @@ $("importFile").onchange=async()=>{
 $("importNo").onclick=()=>{pending=null;$("importConfirm").hidden=true;};
 $("importYes").onclick=()=>{
   if(!pending) return;
-  store.replace(pending); loadBudgetState(); pending=null;
+  store.replace(pending); loadBudgetState(); pending=null; if(editingId) exitEdit();
   $("importConfirm").hidden=true; render(); showMsg("备份已导入。");
 };
 
