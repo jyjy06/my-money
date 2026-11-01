@@ -59,6 +59,8 @@ h1{font-size:18px;font-weight:700;margin:0;letter-spacing:.02em}
 .brow .rm{font-family:var(--mono);font-size:12px;color:var(--muted)}
 .brow input{min-width:0;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:8px;padding:6px 10px;font-family:var(--mono);font-size:14px}
 #bcats{display:flex;flex-direction:column;gap:8px}
+.btitle{font-size:15px;font-weight:500}
+.bhint{font-size:12px;color:var(--muted);margin-top:-4px}
 .bsub{font-size:12px;color:var(--muted);padding-top:6px;border-top:1px solid var(--line);margin-top:4px}
 .bactions{display:flex;justify-content:flex-end;align-items:center;gap:16px;padding-top:4px}
 .save.small{padding:7px 16px;font-size:14px}
@@ -126,6 +128,8 @@ section h2{font-size:13px;font-weight:500;color:var(--muted);margin:0 0 10px;let
       <div class="bar"><i id="budgetBar" style="width:0"></i></div>
       <div class="budget-line"><span id="budgetText">还没有设置月预算</span><button class="link" id="budgetBtn" aria-expanded="false">设置预算</button></div>
       <div id="budgetEdit" class="bedit" hidden>
+        <div class="btitle" id="bTitle"></div>
+        <div class="bhint" id="bHint"></div>
         <div class="brow"><label for="b_total">总预算</label><span class="rm">RM</span><input id="b_total" inputmode="decimal" placeholder="不限"></div>
         <div class="bsub">分类预算（留空表示不限）</div>
         <div id="bcats"></div>
@@ -184,23 +188,36 @@ const toCents = s => { const v = parseFloat(String(s).replace(/,/g,"")); return 
 
 let type = "out", cat = CATS.out[0];
 let ym = (() => { const d=new Date(); return {y:d.getFullYear(), m:d.getMonth()+1}; })();
-let entries = [], budget = 0, catBudgets = {};
+let entries = [], budget = 0, catBudgets = {};   // 当前所选月份生效的预算
+let budgetMap = {}, legacyBudget = {total:0,cats:{}}, budgetInherited = "";
+const monthKey = () => `${ym.y}-${pad(ym.m)}`;
+// 这个月有自己的预算就用自己的；没有就沿用最近一个有设置的上月；都没有才用旧版预算
+function applyBudget(){
+  const key=monthKey(); let src=budgetMap[key]; budgetInherited="";
+  if(!src){
+    const prev=Object.keys(budgetMap).filter(k=>k<key).sort().pop();
+    if(prev){ src=budgetMap[prev]; const [py,pm]=prev.split("-").map(Number); budgetInherited = py===ym.y ? `${pm} 月` : `${py} 年 ${pm} 月`; }
+    else src=legacyBudget;
+  }
+  budget=src.total||0; catBudgets=src.cats||{};
+}
+function loadBudgetState(){ const b=store.loadBudgets(); budgetMap=b.map; legacyBudget=b.legacy; applyBudget(); }
 let store = null;
 
 /* ---------- storage: this phone only ---------- */
 function localStore(){
   const K="campus-ledger-v1";
-  const load=()=>{try{return JSON.parse(localStorage.getItem(K))||{entries:[],budget:0,catBudgets:{}}}catch(e){return {entries:[],budget:0,catBudgets:{}}}};
+  const load=()=>{try{return JSON.parse(localStorage.getItem(K))||{entries:[],budget:0,catBudgets:{},budgets:{}}}catch(e){return {entries:[],budget:0,catBudgets:{},budgets:{}}}};
   const save=d=>{localStorage.setItem(K,JSON.stringify(d))};
   let listener=null, range=null;
   const emit=()=>{ if(!listener) return; const d=load(); listener(d.entries.filter(e=>e.date>=range[0]&&e.date<=range[1])); };
   return {
     cloud:false,
     watchMonth(a,b,cb){ listener=cb; range=[a,b]; emit(); return ()=>{listener=null}; },
-    watchBudget(cb){ const d=load(); cb(d.budget||0,d.catBudgets||{}); },
+    loadBudgets(){ const d=load(); return {map:d.budgets||{},legacy:{total:d.budget||0,cats:d.catBudgets||{}}}; },
     async add(e){ const d=load(); d.entries.push({...e,id:Date.now().toString(36)+Math.random().toString(36).slice(2,6)}); save(d); emit(); },
     async remove(id){ const d=load(); d.entries=d.entries.filter(x=>x.id!==id); save(d); emit(); },
-    async setBudget(c,cb){ const d=load(); d.budget=c; d.catBudgets=cb; save(d); },
+    async setBudget(key,total,cats){ const d=load(); d.budgets=d.budgets||{}; d.budgets[key]={total,cats}; save(d); },
     dump(){ return load(); },
     replace(d){ save(d); emit(); }
   };
@@ -228,16 +245,17 @@ function render(){
 
   // budget
   const bar=$("budgetBar");
+  const inh=budgetInherited ? ` · 沿用${budgetInherited}预算` : "";
   if(budget>0){
     const p=out/budget; bar.style.width=Math.min(100,p*100)+"%";
     bar.className = p>1?"over":p>.8?"warn":"";
     const left=budget-out;
-    $("budgetText").textContent = left>=0 ? `预算 ${money(budget)} · 还剩 ${money(left)}` : `预算 ${money(budget)} · 超出 ${money(-left)}`;
+    $("budgetText").textContent = (left>=0 ? `预算 ${money(budget)} · 还剩 ${money(left)}` : `预算 ${money(budget)} · 超出 ${money(-left)}`) + inh;
     $("budgetBtn").textContent="修改";
   } else {
     bar.style.width="0";
     const n=Object.keys(catBudgets).length;
-    $("budgetText").textContent= n ? `已设 ${n} 个分类预算` : "还没有设置月预算";
+    $("budgetText").textContent= (n ? `已设 ${n} 个分类预算` : `${ym.m} 月还没有设置预算`) + inh;
     $("budgetBtn").textContent= n ? "修改" : "设置预算";
   }
   $("budgetBox").querySelector(".bar").hidden=!(budget>0);
@@ -299,10 +317,10 @@ let unsub=null;
 function watch(){
   if(unsub) unsub();
   const a=`${ym.y}-${pad(ym.m)}-01`, b=`${ym.y}-${pad(ym.m)}-31`;
-  entries=[]; render();
+  applyBudget(); entries=[]; render();
   unsub=store.watchMonth(a,b,rows=>{entries=rows; render();});
 }
-function shift(n){ let m=ym.m+n,y=ym.y; if(m<1){m=12;y--} if(m>12){m=1;y++} ym={y,m}; watch(); }
+function shift(n){ let m=ym.m+n,y=ym.y; if(m<1){m=12;y--} if(m>12){m=1;y++} ym={y,m}; openBudget(false); watch(); }
 
 /* ---------- events ---------- */
 $("tOut").onclick=()=>setType("out"); $("tIn").onclick=()=>setType("in");
@@ -312,6 +330,8 @@ function openBudget(open){
   $("budgetEdit").hidden=!open; $("budgetBtn").setAttribute("aria-expanded",open);
   $("budgetBtn").hidden=open;
   if(!open) return;
+  $("bTitle").textContent=`${ym.y} 年 ${ym.m} 月预算`;
+  $("bHint").textContent=budgetInherited ? `这个月还没有自己的设置，目前沿用 ${budgetInherited}。保存后只影响 ${ym.m} 月。` : `保存后只影响 ${ym.m} 月，其他月份不变。`;
   $("b_total").value=budget?budget/100:"";
   $("bcats").innerHTML="";
   CATS.out.forEach((c,i)=>{
@@ -329,7 +349,8 @@ $("budgetCancel").onclick=()=>openBudget(false);
 $("budgetSave").onclick=async()=>{
   const total=toCents($("b_total").value);
   const cb={}; $("bcats").querySelectorAll("input").forEach(i=>{const v=toCents(i.value); if(v) cb[i.dataset.cat]=v;});
-  try{ await store.setBudget(total,cb); budget=total; catBudgets=cb; openBudget(false); render(); }
+  const key=monthKey();
+  try{ await store.setBudget(key,total,cb); budgetMap[key]={total,cats:cb}; applyBudget(); openBudget(false); render(); }
   catch(e){ showMsg("预算没有保存成功，请再试一次。"); }
 };
 $("form").onsubmit=async ev=>{
@@ -363,7 +384,7 @@ $("importFile").onchange=async()=>{
   try{
     const d=JSON.parse(await f.text());
     if(!Array.isArray(d.entries)) throw 0;
-    pending={entries:d.entries,budget:d.budget||0,catBudgets:d.catBudgets||{}};
+    pending={entries:d.entries,budget:d.budget||0,catBudgets:d.catBudgets||{},budgets:d.budgets||{}};
     $("importText").textContent=`备份里有 ${pending.entries.length} 笔，覆盖现在的账本？`;
     $("importConfirm").hidden=false;
   }catch(e){ showMsg("这个文件不是账本备份。"); }
@@ -371,7 +392,7 @@ $("importFile").onchange=async()=>{
 $("importNo").onclick=()=>{pending=null;$("importConfirm").hidden=true;};
 $("importYes").onclick=()=>{
   if(!pending) return;
-  store.replace(pending); budget=pending.budget; catBudgets=pending.catBudgets; pending=null;
+  store.replace(pending); loadBudgetState(); pending=null;
   $("importConfirm").hidden=true; render(); showMsg("备份已导入。");
 };
 
@@ -382,7 +403,7 @@ $("date").value=today(); setType("out"); render();
   $("storeNote").textContent="记录只保存在这部手机里，不用网络。记得偶尔导出备份。";
   try{ if(navigator.storage&&navigator.storage.persist) await navigator.storage.persist(); }catch(e){}
   if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(()=>{}); }
-  store.watchBudget((b,cb)=>{budget=b;catBudgets=cb;render();});
+  loadBudgetState();
   watch();
   $("amount").oninput();
 })();
